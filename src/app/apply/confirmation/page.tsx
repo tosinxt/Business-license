@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppHeader from "../../components/AppHeader";
-import ProtectedRoute from "../../components/ProtectedRoute";
 
 function ConfirmationContent() {
   const router = useRouter();
@@ -97,8 +96,8 @@ function ConfirmationContent() {
 
               {/* Actions */}
               <div style={{ display: "flex", gap: "0.75rem" }}>
-                <button type="button" onClick={() => router.push("/dashboard")} className="btn-primary" style={{ flex: 1, padding: "0.75rem" }}>
-                  Return to Dashboard
+                <button type="button" onClick={() => router.push("/")} className="btn-primary" style={{ flex: 1, padding: "0.75rem" }}>
+                  Return home
                 </button>
                 <button type="button" onClick={() => window.print()} className="btn-secondary" style={{ padding: "0.75rem 1.25rem" }}>
                   Print
@@ -113,5 +112,5 @@ function ConfirmationContent() {
 }
 
 export default function ConfirmationPage() {
-  return <ProtectedRoute><ConfirmationContent /></ProtectedRoute>;
+  return <ConfirmationContent />;
 }
