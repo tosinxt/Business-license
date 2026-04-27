@@ -1,6 +1,19 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
+function getAdminDb() {
+  if (!getApps().length) {
+    initializeApp({
+      credential: cert({
+        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+      }),
+    });
+  }
+  return getFirestore();
+}
 
 type DraftLead = {
   id: string;
@@ -19,37 +32,15 @@ type DraftLead = {
   owners?: Array<{ fullName?: string; title?: string; phone?: string; email?: string }>;
 };
 
-type StoreShape = {
-  drafts: Record<string, DraftLead>;
-};
-
-const DATA_DIR = path.join(process.cwd(), ".data");
-const DATA_FILE = path.join(DATA_DIR, "draft-leads.json");
-
-async function readStore(): Promise<StoreShape> {
-  try {
-    const raw = await fs.readFile(DATA_FILE, "utf8");
-    const parsed = JSON.parse(raw) as StoreShape;
-    return parsed?.drafts ? parsed : { drafts: {} };
-  } catch {
-    return { drafts: {} };
-  }
-}
-
-async function writeStore(store: StoreShape) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(DATA_FILE, JSON.stringify(store, null, 2), "utf8");
-}
-
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  const store = await readStore();
-  const draft = store.drafts[id];
-  if (!draft) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(draft);
+  const db = getAdminDb();
+  const doc = await db.collection("drafts").doc(id).get();
+  if (!doc.exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(doc.data());
 }
 
 export async function POST(req: Request) {
@@ -62,8 +53,6 @@ export async function POST(req: Request) {
 
   if (!body?.id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  // Never persist sensitive fields (SSN/DL/DOB/etc.). The client sends a sanitized payload,
-  // and we keep it constrained here as an extra guardrail.
   const lead: DraftLead = {
     id: String(body.id),
     step: Number(body.step || 1),
@@ -79,7 +68,7 @@ export async function POST(req: Request) {
     contactPhone: String(body.contactPhone || ""),
     contactEmail: String(body.contactEmail || ""),
     owners: Array.isArray(body.owners)
-      ? body.owners.slice(0, 8).map(o => ({
+      ? body.owners.slice(0, 8).map((o) => ({
           fullName: String(o?.fullName || ""),
           title: String(o?.title || ""),
           phone: String(o?.phone || ""),
@@ -88,10 +77,7 @@ export async function POST(req: Request) {
       : [],
   };
 
-  const store = await readStore();
-  store.drafts[lead.id] = lead;
-  await writeStore(store);
-
+  const db = getAdminDb();
+  await db.collection("drafts").doc(lead.id).set(lead, { merge: true });
   return NextResponse.json({ ok: true });
 }
-

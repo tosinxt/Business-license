@@ -1,51 +1,70 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile,
+  type User as FirebaseUser,
+} from "firebase/auth";
+import { auth, googleProvider } from "@/lib/firebase";
 
 interface User {
-  name: string;
-  email: string;
+  uid: string;
+  name: string | null;
+  email: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (name: string, email: string) => void;
-  logout: () => void;
+  loading: boolean;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (name: string, email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const SESSION_KEY = "bl_session";
+function toUser(fb: FirebaseUser): User {
+  return { uid: fb.uid, name: fb.displayName, email: fb.email };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        if (data.loggedIn && data.name && data.email) {
-          setUser({ name: data.name, email: data.email });
-        }
-      }
-    } catch {
-      // ignore malformed storage
-    }
+    const unsub = onAuthStateChanged(auth, (fb) => {
+      setUser(fb ? toUser(fb) : null);
+      setLoading(false);
+    });
+    return unsub;
   }, []);
 
-  function login(name: string, email: string) {
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ name, email, loggedIn: true }));
-    setUser({ name, email });
+  async function loginWithEmail(email: string, password: string) {
+    await signInWithEmailAndPassword(auth, email, password);
   }
 
-  function logout() {
-    localStorage.removeItem(SESSION_KEY);
-    setUser(null);
+  async function signUpWithEmail(name: string, email: string, password: string) {
+    const { user: fb } = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(fb, { displayName: name });
+    setUser(toUser({ ...fb, displayName: name }));
+  }
+
+  async function loginWithGoogle() {
+    await signInWithPopup(auth, googleProvider);
+  }
+
+  async function logout() {
+    await signOut(auth);
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, loginWithEmail, signUpWithEmail, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );
